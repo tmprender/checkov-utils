@@ -66,6 +66,33 @@ def tf_run_task_review():
         scan_status = 'failed'
 
     # format response
+    outcomes = []
+    for check in scan_results['failed_checks']:
+        outcome = {
+            "type": "task-result-outcomes",
+            "attributes": {
+                "outcome-id": check['check_id'],
+                "description": check['check_name'],
+                "tags": [
+                    {
+                        "label": "resource",
+                        "level": "info",
+                        "value": check['resource']
+                    },
+                    {
+                        "label": "file_path",
+                        "level": "info",
+                        "value": check['file_path']
+                    },
+                    {
+                        "label": "guideline",
+                        "level": "info",
+                        "value": check.get('guideline')
+                    }
+                ]
+            }          
+        }
+        outcomes.append(outcome)
     payload = {
         "data": {
             "type": "task-results",
@@ -73,6 +100,11 @@ def tf_run_task_review():
                 "status": scan_status,
                 "message": str_summary,
                 "url": "https://checkov.io/",
+            },
+            "relationships": {
+                "outcomes":{
+                    "data": outcomes
+                }
             }
         }
     }
