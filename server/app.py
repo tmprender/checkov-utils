@@ -35,9 +35,7 @@ def tf_run_task_review():
     access_token = data['access_token']
     callback_url = data['task_result_callback_url']
     download_url = data.get('configuration_version_download_url')  # tar of code to scan, can be null
-    
-    if data['stage'] == "post-plan":
-        tf_plan_dl_url = data['plan_json_api_url']
+    tf_plan_dl_url = data.get('plan_json_api_url')  # json output, available in post-plan only
     
 
     # download config -- only post-plan (plain json) for now.. checkov() will handle tar extract needed for pre-plan
