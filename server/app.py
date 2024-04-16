@@ -18,15 +18,20 @@ def checkov():
 
     # scan code
     result = subprocess.run(['checkov', '-d', './scan_target_dir/', '--output', 'json'], capture_output=True, text=True)
-    data  = json.loads(result.stdout)
+    scan  = json.loads(result.stdout)
 
     # return result text and exit code
-    return data
+    return scan
 
 @app.route('/tf_run_task_review', methods = ['POST'])
 def tf_run_task_review():
-    # parse payload
+
+    # handle test/setup
     data = request.json
+    if data['stage'] == 'test':
+        return data
+    
+    # parse payload
     access_token = data['access_token']
     callback_url = data['task_result_callback_url']
     download_url = data.get('configuration_version_download_url')  # tar of code to scan, can be null
@@ -48,18 +53,19 @@ def tf_run_task_review():
         f.write(content)
 
     result = subprocess.run(['checkov', '-f', './tfplan.json', '--output', 'json'], capture_output=True, text=True)
-    scan  = json.loads(result.stdout)
+    scan = json.loads(result.stdout)
 
-    # format response
+    # parse scan results
+    scan_results = scan['results']
+
     scan_summary = scan['summary']
     str_summary = 'PASSED: {}, FAILED: {}, SKIPPED: {}'.format(scan_summary['passed'], scan_summary['failed'], scan_summary['skipped'])
-    scan_results = scan['results']
-    scan_status = 'passed'  # default to open for now.. should fail closed
 
-    if data['summary']['failed'] > 0:  # use soft-fail flag and exit code eventually
-        scan_satus = 'failed'
+    scan_status = 'passed'  # default to open for now.. should fail closed    
+    if scan_summary['failed'] > 0:  # use soft-fail flag and exit code eventually
+        scan_status = 'failed'
 
-    # return results to tfc/e
+    # format response
     payload = {
         "data": {
             "type": "task-results",
@@ -71,8 +77,10 @@ def tf_run_task_review():
         }
     }
     payload = json.dumps(payload)
+
+    # return results to tfc/e
     response = requests.request('PATCH', callback_url, headers=headers, data=payload)
-    return 200
+    return scan
     
 
 if __name__ == '__main__':
