@@ -71,23 +71,8 @@ def tf_run_task_review():
             "attributes": {
                 "outcome-id": check['check_id'],
                 "description": check['check_name'],
-                "tags": [
-                    {
-                        "label": "resource",
-                        "level": "info",
-                        "value": check['resource']
-                    },
-                    {
-                        "label": "file_path",
-                        "level": "info",
-                        "value": check['file_path']
-                    },
-                    {
-                        "label": "guideline",
-                        "level": "info",
-                        "value": check.get('guideline')
-                    }
-                ]
+                "url": check.get('guideline'),
+                "body": "Checkov found an issue with {} in {}.".format(check['resource'], check['file_path'])
             }          
         }
         outcomes.append(outcome)
