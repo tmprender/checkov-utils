@@ -1,22 +1,9 @@
-# README
-Run checkov in a container
+# checkov-utils
 
+## Server
+Hosted checkov accesible via an API
 
-## example:
-```bash
-git clone <this repo>
-docker build -t tmp/ckv .
-docker run --rm tmp/ckv -f s3.tf
+## Runner
+Run checkov commands in a dedicated container
 
-```
-
-*use exit codes*:
-```bash
-docker run --tmp/ckv --version ; echo $?
-3.2.50
-0
-
-docker run --tmp/ckv s3.tf ; echo $?
-...
-1
-```
+See individual READMEs within

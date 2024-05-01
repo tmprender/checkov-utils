@@ -1,7 +1,11 @@
-from flask import Flask, request, jsonify
+import os
 import subprocess
 import json
+import base64
+import tarfile
+import shutil
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
@@ -10,24 +14,34 @@ def index():
     result = subprocess.run(['checkov', '--help'], capture_output=True, text=True).stdout
     return result
 
-@app.route('/checkov', methods = ['POST', 'GET'])
-def checkov():
-    # process input (encoded archive)
-    
-    # move to target directory
+@app.route('/checkov', methods=['POST'])
+def checkov_api():
+    data = request.get_json()
+    if not data or 'flags' not in data or 'file' not in data:
+        return jsonify({"error": "Invalid request. JSON with 'flags' and 'file' required."}), 400
 
-    # scan code
-    result = subprocess.run(['checkov', '-d', './scan_target_dir/', '--output', 'json'], capture_output=True, text=True)
-    scan  = json.loads(result.stdout)
+    target_dir = './temp_dir'
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
 
-    # return result text and exit code
-    return scan
+    try:
+        decode_and_unpack_tar_gz(data['file'], target_dir)
+        scan_results = run_checkov(target_dir, data['flags'], is_file=False)
+        return jsonify({"scan_result": scan_results}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": "Checkov scan failed.", "details": e.stderr}), 500
+    finally:
+        # Clean up the temporary directory
+        shutil.rmtree(target_dir, ignore_errors=True)
 
-@app.route('/tf_run_task_review', methods = ['POST'])
+
+@app.route('/tf_run_task_review', methods=['POST'])
 def tf_run_task_review():
+    data = request.json
 
     # handle test/setup
-    data = request.json
     if data['stage'] == 'test':
         return data
     
@@ -37,23 +51,39 @@ def tf_run_task_review():
     download_url = data.get('configuration_version_download_url')  # tar of code to scan, can be null
     tf_plan_dl_url = data.get('plan_json_api_url')  # json output, available in post-plan only
     
-
-    # download config -- only post-plan (plain json) for now.. checkov() will handle tar extract needed for pre-plan
     headers = {
         'Content-Type': 'application/vnd.api+json',
         'Authorization': "Bearer " + access_token
     }
-    response = requests.request("GET", tf_plan_dl_url, headers=headers)
-    content = json.dumps(response.json())
+    
+    if data['stage'] == 'pre-plan':
+        if download_url:
+            # Download and extract tar.gz
+            response = requests.get(download_url, headers=headers)
+            response.raise_for_status()
+            target_dir = './temp_dir'
+            os.makedirs(target_dir, exist_ok=True)
+            decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
+            # Run Checkov on the directory
+            scan = run_checkov(target_dir, cli_flags=None, is_file=False)
+            # Cleanup
+            shutil.rmtree(target_dir)
+        else:
+            return jsonify({"error": "No configuration version download URL provided for pre-plan."}), 400
+    elif data['stage'] == 'post-plan':
+        # Download the plan JSON
+        response = requests.get(tf_plan_dl_url, headers=headers)
+        response.raise_for_status()
+        plan_json = response.json()
+        with open("tfplan.json", "w") as f:
+            json.dump(plan_json, f)
+        # Run Checkov on the plan file
+        scan = run_checkov("tfplan.json", None, is_file=True)
+        os.remove("tfplan.json")
+    else:
+        return jsonify({"error": "Invalid stage."}), 400
 
-    # pass to checkov
-    with open("tfplan.json", "w") as f:
-        f.write(content)
-
-    result = subprocess.run(['checkov', '-f', './tfplan.json', '--output', 'json'], capture_output=True, text=True)
-    scan = json.loads(result.stdout)
-
-    # parse scan results
+    # parse checkov scan results
     scan_results = scan['results']
 
     scan_summary = scan['summary']
@@ -63,7 +93,7 @@ def tf_run_task_review():
     if scan_summary['failed'] > 0:  # use soft-fail flag and exit code eventually
         scan_status = 'failed'
 
-    # format response
+    # format response for TFC/E
     outcomes = []
     for check in scan_results['failed_checks']:
         outcome = {
@@ -76,6 +106,7 @@ def tf_run_task_review():
             }          
         }
         outcomes.append(outcome)
+
     payload = {
         "data": {
             "type": "task-results",
@@ -91,12 +122,51 @@ def tf_run_task_review():
             }
         }
     }
-    payload = json.dumps(payload)
 
-    # return results to tfc/e
-    response = requests.request('PATCH', callback_url, headers=headers, data=payload)
-    return scan
-    
+    # Return results to tfc/e
+    response = requests.patch(callback_url, headers=headers, data=json.dumps(payload))
+    response.raise_for_status()
+    return jsonify(scan)
+
+# Internals
+
+def decode_and_unpack_tar_gz(file_content, target_dir, is_base64_encoded=True):
+    # Decode the base64-encoded file if necessary
+    if is_base64_encoded:
+        try:
+            file_data = base64.b64decode(file_content)
+        except base64.binascii.Error as e:
+            raise ValueError("Invalid base64 encoding") from e
+    else:
+        file_data = file_content
+
+    # Write the binary data to a temporary file
+    temp_tar_path = os.path.join(target_dir, 'temp_file.tar.gz')
+    with open(temp_tar_path, 'wb') as f:
+        f.write(file_data)
+
+    # Extract the tar.gz file
+    try:
+        with tarfile.open(temp_tar_path, 'r:gz') as tar:
+            tar.extractall(path=target_dir)
+    finally:
+        os.remove(temp_tar_path)
+
+def run_checkov(target, cli_flags, is_file=False):
+    if cli_flags is None:
+        cli_flags = []
+    # Determine the Checkov scan target flag based on the input
+    target_flag = '-f' if is_file else '-d'
+    # Run the Checkov scan
+    result = subprocess.run(
+        ['checkov', target_flag, target, '--output', 'json'] + cli_flags,
+        capture_output=True,
+        text=True
+    )
+    # if result.returncode != 0:
+    #     raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
+    return json.loads(result.stdout)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True)
