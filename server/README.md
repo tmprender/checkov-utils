@@ -19,6 +19,6 @@ Run checkov as webserver. Send base64 encoded tar.gz of your code to `/checkov` 
 	
 	curl -X POST http://example.com/api_endpoint \
      		-H "Content-Type: application/json" \
-     		-d "$json_payload"```
+     		-d "$json_payload"
 
 
