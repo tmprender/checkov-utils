@@ -17,7 +17,7 @@ Run checkov as webserver. Send base64 encoded tar.gz of your code to `/checkov` 
 	```sh
 	json_payload=$(jq -n --arg file "$(cat encoded_archive.txt)" '{"file": $file, "flags": []}')
 	
-	curl -X POST http://example.com/api_endpoint \
+	curl -X POST localhost:8000/checkov \
      		-H "Content-Type: application/json" \
      		-d "$json_payload"
 
