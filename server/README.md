@@ -22,3 +22,7 @@ Run checkov as webserver. Send base64 encoded tar.gz of your code to `/checkov` 
      		-d "$json_payload"
 
 
+
+- Example with CLI args
+	```sh
+	json_payload=$(jq -n --arg file "$(cat encoded_archive.txt)" '{"file": $file, "flags":["--check", "CKV_SECRET_6"]}')
