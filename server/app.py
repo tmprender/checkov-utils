@@ -11,8 +11,19 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    result = subprocess.run(['checkov', '--help'], capture_output=True, text=True).stdout
-    return result
+    usage_instructions = {
+        "welcome": "Welcome to the Checkov API!",
+        "instructions": {
+            "To scan your Terraform code": "Send a POST request to /checkov with a JSON payload containing your base64-encoded .tar.gz file and optional Checkov CLI flags.",
+            "Format example": {
+                "file": "<base64_encoded_tar_gz_data>",
+                "flags": ["--flag1", "--flag2", "value2", "--flag3=value3"]
+            },
+            "To use Checkov CLI locally": "Run 'checkov --help' on your local machine for a list of available Checkov commands and flags."
+        },
+        "more_info": "For more details on Checkov, visit https://www.checkov.io/"
+    }
+    return jsonify(usage_instructions)
 
 @app.route('/checkov', methods=['POST'])
 def checkov_api():
