@@ -28,13 +28,16 @@ def index():
 @app.route('/checkov', methods=['POST'])
 def checkov_api():
     data = request.get_json()
+    # check request for required args
     if not data or 'flags' not in data or 'file' not in data:
         return jsonify({"error": "Invalid request. JSON with 'flags' and 'file' required."}), 400
 
+    # create temporary directory
     target_dir = './temp_dir'
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
-
+    
+    # unpack tar and scan
     try:
         decode_and_unpack_tar_gz(data['file'], target_dir)
         scan_results = run_checkov(target_dir, data['flags'], is_file=False)
@@ -43,8 +46,9 @@ def checkov_api():
         return jsonify({"error": str(e)}), 400
     except subprocess.CalledProcessError as e:
         return jsonify({"error": "Checkov scan failed.", "details": e.stderr}), 500
+    
+    # clean up temporary directory
     finally:
-        # Clean up the temporary directory
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
@@ -66,31 +70,40 @@ def tf_run_task_review():
         'Content-Type': 'application/vnd.api+json',
         'Authorization': "Bearer " + access_token
     }
-    
-    if data['stage'] == 'pre-plan':
+    #pre_plan
+    if data['stage'] == 'pre_plan':
         if download_url:
             # Download and extract tar.gz
-            response = requests.get(download_url, headers=headers)
-            response.raise_for_status()
-            target_dir = './temp_dir'
-            os.makedirs(target_dir, exist_ok=True)
-            decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
-            # Run Checkov on the directory
-            scan = run_checkov(target_dir, cli_flags=None, is_file=False)
-            # Cleanup
-            shutil.rmtree(target_dir)
+            try:
+                response = requests.get(download_url, headers=headers)
+                response.raise_for_status()
+                target_dir = './temp_dir'
+                os.makedirs(target_dir, exist_ok=True)
+                decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
+                # Run Checkov on the directory
+                scan = run_checkov(target_dir, cli_flags=None, is_file=False)
+                # Cleanup
+                shutil.rmtree(target_dir)
+            except Exception as e:
+                return jsonify({"error": e}), 500
         else:
             return jsonify({"error": "No configuration version download URL provided for pre-plan."}), 400
-    elif data['stage'] == 'post-plan':
+    
+    # post_plan    
+    elif data['stage'] == 'post_plan':
         # Download the plan JSON
-        response = requests.get(tf_plan_dl_url, headers=headers)
-        response.raise_for_status()
-        plan_json = response.json()
-        with open("tfplan.json", "w") as f:
-            json.dump(plan_json, f)
-        # Run Checkov on the plan file
-        scan = run_checkov("tfplan.json", None, is_file=True)
-        os.remove("tfplan.json")
+        try:
+            response = requests.get(tf_plan_dl_url, headers=headers)
+            response.raise_for_status()
+            plan_json = response.json()
+            with open("tfplan.json", "w") as f:
+                json.dump(plan_json, f)
+            # Run Checkov on the plan file
+            scan = run_checkov("tfplan.json", None, is_file=True)
+            os.remove("tfplan.json")
+        except Exception as e:
+            return jsonify({"error": e}), 500
+    # invalid stage / not supported
     else:
         return jsonify({"error": "Invalid stage."}), 400
 
