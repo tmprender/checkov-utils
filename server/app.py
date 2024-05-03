@@ -5,6 +5,7 @@ import base64
 import tarfile
 import shutil
 import requests
+import time
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -73,8 +74,12 @@ def tf_run_task_review():
     #pre_plan
     if data['stage'] == 'pre_plan':
         if download_url:
+            
+            #pre_plan_analysis(download_url, headers)
+
             # Download and extract tar.gz
             try:
+                time.sleep(5)  # why is TFC giving me a download URL before it's ready...
                 response = requests.get(download_url, headers=headers)
                 response.raise_for_status()
                 target_dir = './temp_dir'
@@ -82,7 +87,9 @@ def tf_run_task_review():
                 decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
                 # Run Checkov on the directory
                 scan = run_checkov(target_dir, cli_flags=None, is_file=False)
-                # Cleanup
+                # parse for just TF checks - quick fix
+                scan = scan[0]
+                # clean up
                 shutil.rmtree(target_dir)
             except Exception as e:
                 return jsonify({"error": e}), 500
@@ -91,6 +98,9 @@ def tf_run_task_review():
     
     # post_plan    
     elif data['stage'] == 'post_plan':
+        
+        #post_plan_analysis(tf_plan_dl_url, headers)
+
         # Download the plan JSON
         try:
             response = requests.get(tf_plan_dl_url, headers=headers)
@@ -114,7 +124,7 @@ def tf_run_task_review():
     str_summary = 'PASSED: {}, FAILED: {}, SKIPPED: {}'.format(scan_summary['passed'], scan_summary['failed'], scan_summary['skipped'])
 
     scan_status = 'passed'  # default to open for now.. should fail closed    
-    if scan_summary['failed'] > 0:  # use soft-fail flag and exit code eventually
+    if scan_summary['failed'] > 0:  # use exit code eventually
         scan_status = 'failed'
 
     # format response for TFC/E
