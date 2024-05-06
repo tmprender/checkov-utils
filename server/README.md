@@ -15,12 +15,27 @@ Run checkov as webserver. Send base64 encoded tar.gz of your code to `/checkov` 
 
 - Make API call
 	```sh
-	json_payload=$(jq -n --arg file "$(cat encoded_archive.txt)" '{"file": $file, "flags": []}')
-	
-	curl -X POST localhost:8000/checkov \
-     		-H "Content-Type: application/json" \
-     		-d "$json_payload"
+	#!/bin/bash
 
+	# Directory to be packaged and uploaded
+	SOURCE_DIR="path/to/your/source_code_directory"
+
+	# Archive the directory
+	tar --exclude=".terraform*" --exclude=".git/*" -czvf archive.tar.gz $SOURCE_DIR
+
+	# Encode the archive in base64
+	openssl base64 -in archive.tar.gz -out encoded_archive.txt
+
+	# Create a JSON payload with the base64-encoded content
+	json_payload=$(jq -n --arg file "$(cat encoded_archive.txt)" '{"file": $file, "flags": []}')
+
+	# Send the POST request
+	curl -X POST localhost:8000/checkov \
+		-H "Content-Type: application/json" \
+		-d "$json_payload"
+
+	# Clean up temporary files
+	rm archive.tar.gz encoded_archive.txt
 
 
 - Example with CLI args
