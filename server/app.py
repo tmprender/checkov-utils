@@ -29,6 +29,7 @@ def index():
 @app.route('/checkov', methods=['POST'])
 def checkov_api():
     data = request.get_json()
+    print("REQUEST: " , data)
     # check request for required args
     if not data or 'flags' not in data or 'file' not in data:
         return jsonify({"error": "Invalid request. JSON with 'flags' and 'file' required."}), 400
@@ -55,7 +56,8 @@ def checkov_api():
 
 @app.route('/tf_run_task_review', methods=['POST'])
 def tf_run_task_review():
-    data = request.json
+    data = request.get_json()
+    print("REQUEST: " , data)
 
     # handle test/setup
     if data['stage'] == 'test':
@@ -88,7 +90,7 @@ def tf_run_task_review():
         if tf_plan_dl_url:   
             scan = post_plan_analysis(tf_plan_dl_url, headers)
         else:
-            return jsonify({"error": "No plan_json_api_url provided; expected for post-plan"})
+            return jsonify({"error": "No plan_json_api_url provided; expected for post-plan"}), 400
 
     # invalid stage / not supported
     else:
@@ -193,11 +195,12 @@ def pre_plan_analysis(download_url, working_dir, headers):
         response = requests.get(download_url, headers=headers)
         response.raise_for_status()
         target_dir = './temp_dir'
-        os.makedirs(target_dir, exist_ok=True)
-        decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
-        # check for working directory
+        # check for working directory - **only works if user enters leading '/'
         if working_dir:
             target_dir += working_dir
+        os.makedirs(target_dir, exist_ok=True)
+        decode_and_unpack_tar_gz(response.content, target_dir, is_base64_encoded=False)
+        
         # Run Checkov on the directory
         scan = run_checkov(target_dir, cli_flags=None, is_file=False)
         # parse for just TF checks - quick fix
